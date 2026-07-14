@@ -606,5 +606,28 @@ class SessionInspectionTests(unittest.TestCase):
         self.assertEqual(exit_code, 2)
 
 
+class SkillPromptContractTests(unittest.TestCase):
+    def test_default_prompt_carries_explicit_support_task_authorization(self) -> None:
+        metadata = (SKILL_ROOT / "agents" / "openai.yaml").read_text(encoding="utf-8")
+        instructions = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        expected_metadata = """interface:
+  display_name: "Optimize Codex Subagents"
+  short_description: "Speed up live Codex projects safely"
+  default_prompt: "Use $optimize-codex-subagents for this task; I explicitly authorize you, when exact model and reasoning materially improve time to trustworthy completion, to create, monitor, integrate, and archive read-only standalone support tasks using the Skill's audited mapping, while keeping this main task as the sole writer."
+"""
+        expected_contract = """## Use explicit standalone-task authorization
+
+- Treat standalone support-task authorization as present only when the current user message explicitly grants it. The Skill's UI default prompt contains that grant; this file or an `AGENTS.md` rule alone does not.
+- When authorized and exact model/reasoning materially improves time to trustworthy completion, create, monitor, integrate, and archive a short-lived standalone support task. Do not make the user open it or switch models manually.
+- Use the audited target mapping only after verifying host availability: Luna `low` for large mechanical batches, Terra `medium` for bounded read-heavy scouting, Sol `high` for stable-diff review, and Sol `xhigh` for high-risk review.
+- Keep every support task read-only: no file edits, Git operations, external actions, or child agents. Keep the main task as the sole shared-tree writer and final acceptor.
+- Embed a unique routing marker, verify the effective model/reasoning and sandbox, integrate only evidence-backed results, then archive the support task.
+- Use internal children with complete behavior contracts when exact settings do not justify standalone-task startup. Report their effective settings without claiming caller-controlled routing.
+- If the requested standalone model/reasoning cannot be created or verified, report the fallback and continue with the controller or a generic internal child; never silently claim the intended route succeeded.
+"""
+        self.assertEqual(metadata, expected_metadata)
+        self.assertIn(expected_contract, instructions)
+
+
 if __name__ == "__main__":
     unittest.main()

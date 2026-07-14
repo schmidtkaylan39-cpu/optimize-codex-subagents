@@ -1,4 +1,4 @@
 interface:
   display_name: "Optimize Codex Subagents"
   short_description: "Speed up live Codex projects safely"
-  default_prompt: "Use $optimize-codex-subagents to retrofit this large or in-flight project for faster execution and safer multi-agent work; report behavior contracts, effective settings, caller controls, role labels, and custom-profile provenance separately."
+  default_prompt: "Use $optimize-codex-subagents for this task; I explicitly authorize you, when exact model and reasoning materially improve time to trustworthy completion, to create, monitor, integrate, and archive read-only standalone support tasks using the Skill's audited mapping, while keeping this main task as the sole writer."

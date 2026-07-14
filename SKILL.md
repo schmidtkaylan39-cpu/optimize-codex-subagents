@@ -74,6 +74,16 @@ Use these output templates as starting points, then adapt them to the audited en
 Do not assume example model IDs are available. Preserve the user's provider and select only models verified on that host.
 The supplied role TOMLs are configuration templates, not proof of effective child routing.
 
+## Use explicit standalone-task authorization
+
+- Treat standalone support-task authorization as present only when the current user message explicitly grants it. The Skill's UI default prompt contains that grant; this file or an `AGENTS.md` rule alone does not.
+- When authorized and exact model/reasoning materially improves time to trustworthy completion, create, monitor, integrate, and archive a short-lived standalone support task. Do not make the user open it or switch models manually.
+- Use the audited target mapping only after verifying host availability: Luna `low` for large mechanical batches, Terra `medium` for bounded read-heavy scouting, Sol `high` for stable-diff review, and Sol `xhigh` for high-risk review.
+- Keep every support task read-only: no file edits, Git operations, external actions, or child agents. Keep the main task as the sole shared-tree writer and final acceptor.
+- Embed a unique routing marker, verify the effective model/reasoning and sandbox, integrate only evidence-backed results, then archive the support task.
+- Use internal children with complete behavior contracts when exact settings do not justify standalone-task startup. Report their effective settings without claiming caller-controlled routing.
+- If the requested standalone model/reasoning cannot be created or verified, report the fallback and continue with the controller or a generic internal child; never silently claim the intended route succeeded.
+
 ## Orchestrate in waves
 
 1. Define each child task with objective, scope, exclusions, evidence format, and completion criteria.
