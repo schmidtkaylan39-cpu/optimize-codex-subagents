@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "policy_id": "optimize-codex-subagents-gpt-5.6-baseline",
+  "diagnostic_only": true,
+  "high_risk_role": "high-risk-reviewer",
+  "writer_role": "writer",
+  "roles": {
+    "controller": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "high",
+      "required_all_flags": [],
+      "candidate_surfaces": ["standalone-support"]
+    },
+    "writer": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "high",
+      "required_all_flags": ["single_writer"],
+      "candidate_surfaces": ["standalone-support"]
+    },
+    "scout": {
+      "model": "gpt-5.6-terra",
+      "reasoning": "medium",
+      "sandbox": "read-only",
+      "required_all_flags": ["read_only", "read_heavy", "bounded"],
+      "candidate_surfaces": ["internal-child", "standalone-support"]
+    },
+    "batch-reader": {
+      "model": "gpt-5.6-luna",
+      "reasoning": "low",
+      "sandbox": "read-only",
+      "required_all_flags": ["read_only", "high_volume", "repeatable", "objective_schema"],
+      "candidate_surfaces": ["internal-child", "standalone-support"]
+    },
+    "reviewer": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "high",
+      "sandbox": "read-only",
+      "required_all_flags": ["read_only", "stable_diff"],
+      "candidate_surfaces": ["internal-child", "standalone-support"]
+    },
+    "high-risk-reviewer": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "xhigh",
+      "sandbox": "read-only",
+      "required_all_flags": ["read_only"],
+      "required_any_flags": [
+        "financial",
+        "security",
+        "concurrency",
+        "migration",
+        "trading_execution_boundary",
+        "safety",
+        "irreversible_change"
+      ],
+      "candidate_surfaces": ["internal-child", "standalone-support"]
+    },
+    "plan": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "xhigh",
+      "required_any_flags": ["architecture", "migration", "safety_boundary", "milestone_planning"],
+      "candidate_surfaces": ["standalone-support"]
+    },
+    "max-solver": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "max",
+      "required_all_flags": ["hardest", "mostly_indivisible"],
+      "candidate_surfaces": ["standalone-support"]
+    },
+    "ultra-controller": {
+      "model": "gpt-5.6-sol",
+      "reasoning": "ultra",
+      "required_all_flags": ["parallel_materially_helpful"],
+      "minimum_independent_parts": 2,
+      "candidate_surfaces": ["standalone-support"]
+    }
+  }
+}

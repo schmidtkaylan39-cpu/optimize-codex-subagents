@@ -5,7 +5,8 @@ max_depth = 1
 interrupt_message = true
 
 # Standalone files under ~/.codex/agents/ or .codex/agents/ are discovered
-# automatically. For an explicitly referenced file elsewhere, use one method:
+# automatically, but discovery is not proof that a child selected the profile.
+# For an explicitly referenced file elsewhere, use one method:
 # [agents.scout]
 # description = "Fast read-only evidence scout"
 # config_file = "./agents/scout.toml"
@@ -14,10 +15,12 @@ interrupt_message = true
 # description = "Independent high-accuracy read-only reviewer"
 # config_file = "./agents/reviewer.toml"
 #
-# Do not override the built-in default role unless the audit deliberately
-# chooses a safe generic fallback for a surface that cannot select named roles.
+# Do not override the built-in default role to force routing. Reconsider only
+# if a future build records selected profile/config provenance and policy
+# prohibits every generic writer; model or role-label matches are insufficient.
 
-# Add only after verifying the installed build needs and accepts role exposure.
-# [features.multi_agent_v2]
-# hide_spawn_agent_metadata = false
-# tool_namespace = "agents"
+# Do not add version-sensitive multi_agent_v2 fields from examples. On Desktop
+# 26.707.9564.0 / CLI 0.144.4, the metadata table was rejected and the Boolean
+# feature conflicted with agents.max_threads. Re-test in an isolated config
+# after upgrades; keep the stable configuration until the fresh spawn schema
+# actually exposes named role selection.

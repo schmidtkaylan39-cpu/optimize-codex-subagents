@@ -4,12 +4,13 @@
 
 1. Role selection
 2. Model and reasoning selection
-3. Traditional Chinese UI labels
-4. Profile without credit acceleration
-5. Concurrency
-6. Context inheritance
-7. Execution waves
-8. Measurement
+3. Routing-surface gate
+4. Traditional Chinese UI labels
+5. Profile without credit acceleration
+6. Concurrency
+7. Context inheritance
+8. Execution waves
+9. Measurement
 
 ## Role selection
 
@@ -27,7 +28,9 @@
 
 ## Model and reasoning selection
 
-Select by capability rather than price alone:
+Treat these as intended targets when the selected surface exposes model and
+reasoning controls. Otherwise use the matching behavior contract and report the
+effective inherited or opaque assignment without claiming caller routing:
 
 - Controller: strongest broadly capable model at `high` for routine large-project execution.
 - Plan mode: `xhigh` for architecture, migrations, safety boundaries, or milestone planning.
@@ -37,6 +40,23 @@ Select by capability rather than price alone:
 - Read-only status monitor: balanced model at `high` when synthesis matters, otherwise `medium`.
 
 Current GPT-5.6 examples are Sol for the controller/reviewer and Terra for scouts. Treat these as examples, not hard requirements. Verify host availability.
+
+## Routing-surface gate
+
+Model choice and task ownership are policy targets until the active tool proves it can enforce them.
+
+- If `spawn_agent` exposes a supported named-role field, request the role and verify the role label and effective settings. Do not claim custom-TOML provenance unless metadata exposes the selected profile/config ID, path, or hash.
+- If it exposes explicit model and reasoning fields, set them and verify the effective values.
+- Some runtimes may make an opaque assignment for an unpinned child. That is not a caller routing capability.
+- If it exposes only task name, message, and context fork, do not claim that a role prompt switched the child to Terra or Luna. The child may inherit the parent model; verify the session either way.
+- Use an explicitly authorized short-lived standalone support task with `model` and `thinking` when exact model/reasoning is required. Integrate its result and archive it afterward; treat its role prompt as a behavioral contract, not proof of named-role identity.
+- A generic child may still follow a scout or reviewer behavior contract. Report the behavior contract, effective model, role-label match, and custom-profile provenance as separate facts.
+
+Run `scripts/verify_subagent_session.py` and `scripts/validate_subagent_routing.py` when local session evidence is available.
+Embed a unique routing marker in each initial prompt, validate one concurrent
+wave per manifest, give every writer a unique workspace ID, and require a
+matching high-risk reviewer for every risk flag. Treat the result as an unsigned
+local consistency check, not cryptographic attestation.
 
 ## Traditional Chinese UI labels
 
@@ -63,7 +83,7 @@ Treat translations as version-sensitive and verify the active UI after major rel
 
 Do not require or recommend a speed-for-credits mode when the account cannot enable it. Do not compensate by lowering the controller to `medium`, which can increase review and debugging time, or by keeping every controller turn at `max` or `ultra`, which increases latency.
 
-Use this baseline after verifying model availability:
+Use this intended baseline only after verifying both model availability and the selected surface's routing capability:
 
 | Work | Baseline |
 | --- | --- |
@@ -77,9 +97,9 @@ Use this baseline after verifying model availability:
 | Hardest mostly indivisible reasoning problem | Sol `max` (最大), when depth matters more than speed |
 | Complex work with several meaningful independent parts | Sol `ultra` (超高), when proactive delegation materially helps |
 
-Most tasks need neither 最大 nor 超高. This Skill can request parallel children while the controller remains 高, so Ultra is not required merely to obtain delegation.
+Most tasks need neither 最大 nor 超高. A controller at 高 can still request parallel children, but those internal children may inherit its model when the spawn schema has no model or role field.
 
-Recover wall-clock time through parallel independent discovery, compact context, one writer, single ownership for tests, stable-diff review, and root-cause regression testing. Once roles are installed and verified, the human keeps the controller at 高; Codex selects child roles without manual switching.
+Recover wall-clock time through parallel independent discovery, compact context, one writer, single ownership for tests, stable-diff review, and root-cause regression testing. Claim caller-controlled model routing only when the pre-dispatch schema exposes model/reasoning controls and post-dispatch effective settings match. Claim custom-profile selection only when metadata also exposes its provenance. Otherwise, use an authorized standalone support task for exact model/reasoning or report the internal child's inherited or opaque assignment.
 
 ## Concurrency
 
@@ -100,20 +120,25 @@ Use the runtime's actual cap. Count the controller when the runtime does.
 
 ## Execution waves
 
+Role names below describe behavior contracts, not proven custom-profile routes.
+For exact model/reasoning, use an authorized standalone support task or a
+future internal surface that exposes those controls. Report effective settings,
+role labels, and custom-profile provenance separately.
+
 ### Normal material change
 
-1. Spawn one or two scouts.
+1. Spawn one or two generic internal children with bounded scout behavior contracts, or use authorized Terra/medium standalone support tasks when exact settings matter.
 2. Let the controller read foundational documents and exact edit targets.
 3. Integrate evidence and implement as the sole shared-tree writer.
 4. Run focused tests.
-5. Spawn one reviewer against the stable diff.
+5. Spawn one generic internal child with the reviewer behavior contract against the stable diff, or use an authorized Sol/high standalone support task when exact settings matter.
 6. Fix findings and run final gates.
 
 ### High-risk change
 
-1. Spawn scouts for independent code paths or invariants.
+1. Spawn generic children with scout behavior contracts for independent code paths or invariants; report their effective settings.
 2. Implement through the controller.
-3. Spawn two reviewers in parallel:
+3. Spawn two children with different reviewer behavior contracts in parallel. If exact settings matter and separate support tasks are authorized, use:
    - Sol `xhigh` for security, safety, concurrency, and invariant review;
    - Sol `high` for regression, test-gap, compatibility, and operational review.
 4. Reconcile only evidence-backed findings.

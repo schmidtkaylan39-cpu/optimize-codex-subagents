@@ -1,5 +1,12 @@
 # Prompt contracts
 
+These contracts constrain task behavior. They do not prove that an internal child selected a custom model or named role. Verify effective session metadata separately.
+
+When recording a routing manifest, include a unique line such as
+`Dispatch marker: ROUTING-DISPATCH-<UUID>` in the initial child or standalone
+support prompt and copy that exact value into `dispatch_marker`. The marker is a
+correlation ID, not a secret or cryptographic signature.
+
 ## Scout
 
 ```text

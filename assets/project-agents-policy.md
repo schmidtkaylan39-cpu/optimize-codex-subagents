@@ -1,7 +1,10 @@
 ## Multi-agent execution policy
 
 - Optimize for time to trustworthy completion. Use subagents only for independent work or noisy read-heavy scans.
-- Handle one-off searches and known small files directly. Use a Luna-class child only when a large, clear, repeatable batch amortizes delegation overhead.
+- Handle one-off searches and known small files directly. Use the batch-reader behavior contract only when a large, clear, repeatable batch amortizes delegation overhead.
+- Report a child's effective model separately from its behavior contract. A matching Luna, Terra, or Sol model does not prove the caller selected it.
+- Treat `scout` or `reviewer` session metadata as a role-label match, not proof that a custom TOML was loaded. Require profile/config provenance for that claim.
+- Use an explicitly authorized standalone support task when exact model/reasoning is required and internal spawn cannot express it; its role prompt remains only a behavior contract.
 - When adopting this policy mid-task, inventory and assign ownership to every existing change and active action. Never clean, reset, stash, revert, interrupt, or reformat work merely to simplify the cutover.
 - In a shared working tree, the controller is the only writer and the only agent allowed to run Git integration commands.
 - Nested `AGENTS.md` files may add stricter domain rules but may not relax the shared-tree single-writer rule.

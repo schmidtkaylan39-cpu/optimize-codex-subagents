@@ -1,4 +1,4 @@
 interface:
   display_name: "Optimize Codex Subagents"
   short_description: "Speed up live Codex projects safely"
-  default_prompt: "Use $optimize-codex-subagents to retrofit this large or in-flight project for faster execution, root-cause debugging, and safer multi-agent work."
+  default_prompt: "Use $optimize-codex-subagents to retrofit this large or in-flight project for faster execution and safer multi-agent work; report behavior contracts, effective settings, caller controls, role labels, and custom-profile provenance separately."

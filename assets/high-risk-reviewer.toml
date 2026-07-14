@@ -1,3 +1,4 @@
+# Intended profile only. File presence does not prove the spawn surface selected it.
 name = "high-risk-reviewer"
 description = "Independent deep reviewer for security, financial, migration, concurrency, safety, and irreversible-change invariants."
 model = "gpt-5.6-sol" # Replace when this model is unavailable on the host.

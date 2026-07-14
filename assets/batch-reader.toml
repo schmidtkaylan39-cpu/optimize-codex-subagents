@@ -1,3 +1,4 @@
+# Intended profile only. File presence does not prove the spawn surface selected it.
 name = "batch-reader"
 description = "Fast read-only batch processor for high-volume, clear, repeatable extraction, classification, or structured summaries."
 model = "gpt-5.6-luna" # Replace when this model is unavailable on the host.

@@ -17,6 +17,16 @@ Build the fastest workflow that still produces trustworthy results. Spend parall
 
 Do not change configuration before completing this audit. Back up every file that will be changed. Treat unavailable acceleration as a hard constraint; never make the workflow depend on a speed or credit mode the account cannot enable.
 
+## Separate routing evidence before delegation
+
+1. Inspect the active child-spawn schema before promising model or role routing. Some runtimes may make an opaque model assignment when settings are unpinned, but that is not a caller-controlled routing capability. On the verified build below, internal children inherited the parent.
+2. Treat a custom agent TOML as an intended profile, not proof that a child selected it.
+3. Do not claim that a custom profile was selected unless the caller surface accepts that profile and session metadata records profile/config provenance such as an ID, path, or hash. A matching role label alone is insufficient.
+4. If the internal spawn surface exposes only a task name, message, and context fork, treat its model/role selection as non-enforceable and assume the child can inherit the parent until session evidence proves otherwise. A role prompt can constrain behavior, but it does not change the effective model.
+5. When exact model and reasoning are required and the user has authorized a separate support task, use a short-lived standalone task whose creation surface explicitly accepts `model` and `thinking`, verify its session metadata, integrate the result, and archive it.
+
+Never describe Terra, Luna, or a named Reviewer as automatically selected merely because its file is installed or its name appears in a prompt. Read [references/compatibility.md](references/compatibility.md) before choosing a routing surface.
+
 ## Retrofit work already in progress
 
 - Treat adoption as a state migration, not a clean restart. Capture active tasks, agents, commands, worktrees, dirty and untracked files, generated artifacts, decisions, and known test state before changing policy.
@@ -29,10 +39,10 @@ Read [references/in-flight-projects.md](references/in-flight-projects.md) before
 ## Route the work
 
 - Handle atomic tasks, known small files, single facts, and one-off searches directly. Do not pay child startup and synthesis cost for a single grep or lookup.
-- Send only high-volume, clear, repeatable extraction or classification work to a Luna-class `batch-reader` after verifying the model.
-- Send noisy, read-heavy, independently bounded work to a `scout`.
+- Use the `batch-reader` behavior contract only for high-volume, clear, repeatable extraction or classification. If effective Luna/low is required, use a caller-controlled surface and verify the resulting model; otherwise report the actual inherited or opaque assignment without calling it Luna routing.
+- Use the scout behavior contract for noisy, read-heavy, independently bounded work. A generic internal child can follow that contract. Call its effective model Terra only when session metadata matches Terra, and do not infer that the caller forced that assignment.
 - Keep requirements, architecture, exact code edits, integration, and final acceptance with the controller.
-- Send a stable diff to an independent `reviewer` for correctness, regression, race, test-gap, and security analysis.
+- Send a stable diff to an independent child with the reviewer behavior contract for correctness, regression, race, test-gap, and security analysis. Treat `reviewer` session metadata as a role-label match, not custom-profile provenance.
 - Permit a write-capable worker only in an isolated worktree with explicit, disjoint ownership. In a shared working tree, use one writer.
 - For high-risk changes, run two reviewers in parallel with different scopes, such as safety/invariants and tests/regressions.
 - For debugging, assign scouts independent, falsifiable hypotheses against one stable reproduction. Keep the hypothesis ledger, edits, and root-cause decision with the controller.
@@ -47,7 +57,8 @@ Read [references/debugging.md](references/debugging.md) when repeated trial-and-
 3. Put reusable role behavior in standalone custom agent TOML files under the documented global or project agent directory. Alternatively, register a role with `[agents.<name>]` and `config_file`; do not define the same role through both paths without verifying precedence.
 4. Prefer documented `[agents]` settings. Read [references/compatibility.md](references/compatibility.md) before adding version-sensitive multi-agent fields.
 5. Reconcile conflicts between global and nested `AGENTS.md` files. A nested policy that permits shared-tree writers can defeat a global single-writer rule.
-6. Do not replace the built-in `default` role unless the audit proves that every generic child must be read-only and named roles cannot be selected. An accidental override can disable legitimate isolated workers.
+6. Do not replace the built-in `default` role merely to force routing. Reconsider only on a future build that exposes the selected profile/config provenance and after policy intentionally prohibits every generic child from writing. An accidental override can disable legitimate isolated workers.
+7. Keep role files when the current internal surface cannot explicitly name them, but report them as intended profiles until session metadata exposes selected profile/config provenance and use an audited fallback meanwhile.
 
 Use these output templates as starting points, then adapt them to the audited environment:
 
@@ -61,11 +72,13 @@ Use these output templates as starting points, then adapt them to the audited en
 - [assets/no-acceleration-profile.toml](assets/no-acceleration-profile.toml)
 
 Do not assume example model IDs are available. Preserve the user's provider and select only models verified on that host.
+The supplied role TOMLs are configuration templates, not proof of effective child routing.
 
 ## Orchestrate in waves
 
 1. Define each child task with objective, scope, exclusions, evidence format, and completion criteria.
 2. Launch all independent children before waiting. Continue in the controller only with non-overlapping work.
+   When exact child model/reasoning matters and internal spawn cannot express it, use an explicitly authorized standalone support task instead of silently accepting inheritance.
 3. Use `fork_turns = "none"` only when the child message is self-contained. Otherwise include the smallest recent context that preserves user constraints.
 4. Require compact results: facts, evidence pointers, inferences, risks, and uncovered areas. Do not return raw search or test logs unless they are the evidence.
 5. Spot-check decisive evidence instead of repeating the full exploration.
@@ -81,15 +94,74 @@ Read [references/prompt-contracts.md](references/prompt-contracts.md) when compo
 Verify all of the following:
 
 - The configuration parses in strict mode when the installed Codex supports strict validation.
-- A scout actually starts with the intended model, reasoning level, and sandbox.
-- A reviewer actually starts with its intended stronger configuration.
-- The configured agent types are selectable in the active tool schema.
+- Every exact scout claim is backed by the effective model, reasoning level, sandbox, and named-role evidence the claim requires; otherwise label it only as a behavior contract.
+- Every exact reviewer claim is backed by its effective stronger configuration and named-role evidence; otherwise label it only as a behavior contract.
+- Any configured agent type being claimed is selectable in the active tool schema and recorded in the child session.
 - The workflow does not require an acceleration, service tier, or credit mode unavailable to the account.
 - Shared-tree scouts and reviewers created no diff or tracked artifacts.
 - Every pre-existing change remains present and has a known owner after an in-flight cutover.
 - The controller ran the repository's required tests and completion gates.
 - A bug fix is tied to root-cause evidence and a regression test, or records why a deterministic regression test is impossible.
 - A restore path exists for every modified configuration file.
+
+When the child tool surface does not report effective model fields, embed a
+unique `ROUTING-DISPATCH-<UUID>` marker in the initial task prompt and run
+`scripts/verify_subagent_session.py <child-thread-id> --dispatch-marker <marker>`.
+Use only its redacted model/reasoning/parent/sandbox output. This can show
+inheritance in the local rollout record; it does not prove that a custom
+profile was selected. Use an authorized standalone task when exact
+model/reasoning is required. Treat its role prompt as a behavioral contract,
+not proof of custom-profile selection.
+
+For a fail-closed local diagnostic, record one JSON manifest per concurrent
+dispatch wave and run
+`scripts/validate_subagent_routing.py <manifest.json>`. The validator applies
+`references/routing-policy-v1.json`, checks the attested role preconditions and
+their evidence pointers, and compares the intended route with the effective
+session metadata. The manifest must also record every surface's observed
+callable fields and an evidence pointer in `surface_capabilities` and
+`surface_capability_evidence`. Each dispatch must include unique dispatch, child, and marker
+IDs; role; surface; parent where applicable; intended model/reasoning and
+policy-required sandbox; flags; and `flag_evidence`. Embed the exact marker in
+the initial prompt. Writers also require a unique `workspace_id`; sequential
+writers belong in separate wave manifests. Any high-risk flag requires a
+matching `high-risk-reviewer` dispatch in the same wave.
+
+The bundled policy is a versioned baseline for the verified GPT-5.6 host, not
+model-availability evidence for another computer. Copy and adapt it after the
+host audit, then pass the copy with `--policy`; do not silently rewrite the
+installed Skill's reference policy for one project.
+
+The output deliberately separates:
+
+- `attested_preconditions_passed`: the declared facts satisfy policy;
+- `session_identity_passed`: exact session ID, source, parent, marker, and
+  parse integrity match;
+- `effective_model_match_passed`: the identity-bound effective model and reasoning match, whether inherited, opaque, or caller-controlled;
+- `sandbox_passed`: the effective sandbox matches when policy pins one;
+- `profile_consistency_passed`: policy, identity, effective model/reasoning, and sandbox match;
+- `role_label_match`: session metadata contains exactly the expected role label;
+- `caller_model_control_attested` and `caller_role_control_attested`: the recorded caller schema exposes the corresponding fields;
+- `caller_model_controls_consistent`: caller model controls were recorded and the effective model/reasoning match; this still does not prove which values the caller passed;
+- `custom_profile_proven`: whether profile/config provenance was recorded; this remains false on the verified schema;
+- `diagnostic_passed`: the local policy/profile consistency check passed.
+
+Do not relabel a behavior-only support task as a custom profile merely because
+its effective settings or role label match. A task claim or UI label never substitutes for
+session metadata. The manifest, evidence pointers, and local rollout files are
+mutable and unsigned; this tool catches consistency errors but is not a
+cryptographic attestation. An independent reviewer must open decisive evidence.
+
+The validator regression suite is:
+
+```powershell
+python -B -m unittest discover -s tests -p 'test_*.py' -v
+```
+
+Before widening rollout, also keep a human-labeled set of at least 10 real task
+examples and compare the selected role with the expected role. Require 100%
+recall for high-risk triggers; unit tests alone do not prove semantic routing
+accuracy on new task descriptions.
 
 If a version-sensitive option fails, restore the documented configuration, report the exact incompatibility, and keep the workflow usable through prompt-level role instructions.
 

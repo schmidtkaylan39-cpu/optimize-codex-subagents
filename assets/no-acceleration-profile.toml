@@ -5,4 +5,7 @@ model_reasoning_effort = "high" # Traditional Chinese UI: 高
 plan_mode_reasoning_effort = "xhigh" # Traditional Chinese UI: 極高
 
 # Intentionally do not set a fast service tier or credit-acceleration feature.
-# Recover speed through custom child roles, bounded context, and concurrency.
+# Recover speed through bounded context, concurrency, generic behavior-contract
+# children, or explicitly authorized standalone tasks with model controls.
+# Installed role files, effective-model matches, and role labels do not prove
+# that an internal caller selected a custom profile.
