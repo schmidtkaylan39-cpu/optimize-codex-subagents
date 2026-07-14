@@ -1,0 +1,23 @@
+# Adjust to the active runtime's advertised cap.
+[agents]
+max_threads = 4
+max_depth = 1
+interrupt_message = true
+
+# Standalone files under ~/.codex/agents/ or .codex/agents/ are discovered
+# automatically. For an explicitly referenced file elsewhere, use one method:
+# [agents.scout]
+# description = "Fast read-only evidence scout"
+# config_file = "./agents/scout.toml"
+#
+# [agents.reviewer]
+# description = "Independent high-accuracy read-only reviewer"
+# config_file = "./agents/reviewer.toml"
+#
+# Do not override the built-in default role unless the audit deliberately
+# chooses a safe generic fallback for a surface that cannot select named roles.
+
+# Add only after verifying the installed build needs and accepts role exposure.
+# [features.multi_agent_v2]
+# hide_spawn_agent_metadata = false
+# tool_namespace = "agents"

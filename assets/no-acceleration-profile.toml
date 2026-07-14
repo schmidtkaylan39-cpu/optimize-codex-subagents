@@ -1,0 +1,8 @@
+# Baseline when the account cannot enable a speed-for-credits mode.
+# Verify every model ID on the host before merging these settings.
+model = "gpt-5.6-sol"
+model_reasoning_effort = "high" # Traditional Chinese UI: 高
+plan_mode_reasoning_effort = "xhigh" # Traditional Chinese UI: 極高
+
+# Intentionally do not set a fast service tier or credit-acceleration feature.
+# Recover speed through custom child roles, bounded context, and concurrency.
