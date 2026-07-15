@@ -1,0 +1,88 @@
+{
+  "report_version": 1,
+  "tested_at": "2026-07-15T08:10:00+08:00",
+  "runtime": {
+    "desktop": "26.707.9564.0",
+    "cli": "0.144.4",
+    "host_thread_cap_observed": 4
+  },
+  "privacy": {
+    "thread_ids": "sha256 only",
+    "local_paths": "omitted",
+    "credentials": "not collected"
+  },
+  "runs": [
+    {
+      "purpose": "Terra medium bounded fan-out contract review",
+      "pod_thread_id_sha256": "ba4ab293c78eb16651bd91216edcdb4a4c43eca70c6413056ebc76af23254757",
+      "pod_effective_model": "gpt-5.6-terra",
+      "pod_effective_reasoning": "medium",
+      "pod_effective_sandbox": "danger-full-access",
+      "legacy_marker_sha256": "9592bae547e33bcc2099c634227467a2d639e717f81c20d1d312c6996665ced2",
+      "legacy_marker_found_after_verifier_fix": true,
+      "children": [
+        {
+          "thread_id_sha256": "dfeb907d07466d67730e9f52572219bb4911bd2f1e45094fe85a0ed83ba35cae",
+          "effective_model": "gpt-5.6-terra",
+          "effective_reasoning": "medium",
+          "effective_sandbox": "danger-full-access",
+          "parent_matches_pod": true
+        },
+        {
+          "thread_id_sha256": "a031e30a73b09a272ac85dd0a305d6ac876dcc2ae2d5838718f40664aff9016c",
+          "effective_model": "gpt-5.6-terra",
+          "effective_reasoning": "medium",
+          "effective_sandbox": "danger-full-access",
+          "parent_matches_pod": true
+        }
+      ],
+      "archived_after_integration": true
+    },
+    {
+      "purpose": "Sol high independent final review pod",
+      "pod_thread_id_sha256": "f2010b034f7dc9c9e6f5951b14c2032a6dbaf09d1230afa5e4ee8b534d0d1f52",
+      "pod_effective_model": "gpt-5.6-sol",
+      "pod_effective_reasoning": "high",
+      "pod_effective_sandbox": "danger-full-access",
+      "legacy_marker_sha256": "ee8f710ea7d6e8c9e05633141add890f82f680c17b438221d2bd6c2faa5c74fe",
+      "legacy_marker_found_after_verifier_fix": true,
+      "children": [
+        {
+          "thread_id_sha256": "77e3f7ab31dea92463561914639f9b892171273f032332c05599ec49b0be6adf",
+          "effective_model": "gpt-5.6-sol",
+          "effective_reasoning": "high",
+          "effective_sandbox": "danger-full-access",
+          "parent_matches_pod": true
+        },
+        {
+          "thread_id_sha256": "bdec77090db885d3f070a483237226663dae765daa5e2f957162641b27b2f5a1",
+          "effective_model": "gpt-5.6-sol",
+          "effective_reasoning": "high",
+          "effective_sandbox": "danger-full-access",
+          "parent_matches_pod": true
+        }
+      ],
+      "archived_after_integration": true
+    }
+  ],
+  "post_test_hardening": {
+    "canonical_marker_required": "ROUTING-DISPATCH-<canonical UUID>",
+    "aggregate_wave_capacity_required": true,
+    "independent_part_per_child_required": true,
+    "controller_capacity_count_required": true,
+    "pod_root_read_only_role_required": true,
+    "pod_leaf_read_only_role_required": true,
+    "omitted_parent_rejected": true,
+    "unknown_source_rejected": true,
+    "unknown_subagent_source_rejected": true,
+    "noncanonical_parent_rejected": true,
+    "high_risk_reviewer_requires_reviewed_dispatch_ids": true,
+    "sandbox_reporting": "verified, failed, or not_pinned"
+  },
+  "limitations": [
+    "This is sanitized mutable local evidence, not a cryptographic attestation.",
+    "Observed child inheritance is not caller-controlled routing.",
+    "Read-only was a behavior contract because effective sandbox was danger-full-access.",
+    "Legacy test markers predated the canonical UUID requirement added after review."
+  ]
+}

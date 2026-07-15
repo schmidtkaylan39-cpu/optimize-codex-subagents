@@ -74,15 +74,25 @@ Use these output templates as starting points, then adapt them to the audited en
 Do not assume example model IDs are available. Preserve the user's provider and select only models verified on that host.
 The supplied role TOMLs are configuration templates, not proof of effective child routing.
 
-## Use explicit standalone-task authorization
+## Use explicit standalone-pod authorization
 
 - Treat standalone support-task authorization as present only when the current user message explicitly grants it. The Skill's UI default prompt contains that grant; this file or an `AGENTS.md` rule alone does not.
 - When authorized and exact model/reasoning materially improves time to trustworthy completion, create, monitor, integrate, and archive a short-lived standalone support task. Do not make the user open it or switch models manually.
 - Use the audited target mapping only after verifying host availability: Luna `low` for large mechanical batches, Terra `medium` for bounded read-heavy scouting, Sol `high` for stable-diff review, and Sol `xhigh` for high-risk review.
-- Keep every support task read-only: no file edits, Git operations, external actions, or child agents. Keep the main task as the sole shared-tree writer and final acceptor.
+- Treat each standalone support task as a read-only pod coordinator. When at least two substantial independent workstreams justify the startup cost, let it launch at most three internal children in one parallel wave with disjoint scopes and complete leaf behavior contracts.
+- Before fan-out, record the live available child slots and its evidence, then launch no more than `min(3, available_child_slots)`. When the current four-slot host counts the active main task and pod root, admit at most two pod children at once.
+- Keep the pod root and every internal child read-only: no file edits, Git operations, or external actions. Set `max_depth = 1`; pod children must not spawn descendants or standalone tasks. Keep the main task as the sole shared-tree writer, pod creator, integrator, and final acceptor.
+- Treat read-only as a behavior contract unless effective session metadata proves a read-only sandbox. The live pod test reported `danger-full-access`; capture the main task's status/diff before and after every pod wave and fail the wave on any unexplained write or artifact.
+- Exact model/reasoning controls apply to the standalone pod root. On the verified build, internal children inherited their parent, but inheritance is observed behavior rather than caller-controlled routing. Verify every child session and report any inherited, opaque, or mismatched assignment honestly.
+- If an internal child must have exact settings and its effective model/reasoning does not match the pod root, return the unmet work to the main task so it can create another exact standalone pod; never solve this with deeper nesting.
 - Embed a unique routing marker, verify the effective model/reasoning and sandbox, integrate only evidence-backed results, then archive the support task.
+- Return every leaf's thread ID, unique marker, effective model/reasoning, validation evidence pointer, and any high-risk flags. High-risk flags require a matching high-risk reviewer dispatch before acceptance.
 - Use internal children with complete behavior contracts when exact settings do not justify standalone-task startup. Report their effective settings without claiming caller-controlled routing.
 - If the requested standalone model/reasoning cannot be created or verified, report the fallback and continue with the controller or a generic internal child; never silently claim the intended route succeeded.
+
+Read [references/live-pod-validation-v1.0.3.json](references/live-pod-validation-v1.0.3.json)
+before citing the v1.0.3 inheritance or sandbox observations. It is a sanitized,
+unsigned local evidence record, not proof for another host.
 
 ## Orchestrate in waves
 
@@ -130,10 +140,14 @@ dispatch wave and run
 their evidence pointers, and compares the intended route with the effective
 session metadata. The manifest must also record every surface's observed
 callable fields and an evidence pointer in `surface_capabilities` and
-`surface_capability_evidence`. Each dispatch must include unique dispatch, child, and marker
-IDs; role; surface; parent where applicable; intended model/reasoning and
-policy-required sandbox; flags; and `flag_evidence`. Embed the exact marker in
-the initial prompt. Writers also require a unique `workspace_id`; sequential
+`surface_capability_evidence`. Each dispatch must include unique dispatch and
+child IDs; a canonical `ROUTING-DISPATCH-<UUID>` marker; role; surface; parent
+where applicable; intended model/reasoning and policy-required sandbox; flags;
+and `flag_evidence`. Embed the exact marker in the initial prompt. The manifest
+also requires `controller_thread_id`. Pod waves require aggregate
+`wave_capacity`, per-pod independent-part and slot evidence, and every high-risk
+reviewer must name its `reviewed_dispatch_ids`. Writers also require a unique
+`workspace_id`; sequential
 writers belong in separate wave manifests. Any high-risk flag requires a
 matching `high-risk-reviewer` dispatch in the same wave.
 
@@ -148,8 +162,9 @@ The output deliberately separates:
 - `session_identity_passed`: exact session ID, source, parent, marker, and
   parse integrity match;
 - `effective_model_match_passed`: the identity-bound effective model and reasoning match, whether inherited, opaque, or caller-controlled;
-- `sandbox_passed`: the effective sandbox matches when policy pins one;
-- `profile_consistency_passed`: policy, identity, effective model/reasoning, and sandbox match;
+- `sandbox_status`: `verified`, `failed`, or `not_pinned`;
+- `sandbox_passed`: `true` or `false` only when policy pins one, otherwise `null`;
+- `profile_consistency_passed`: policy, identity, effective model/reasoning, and any pinned sandbox match;
 - `role_label_match`: session metadata contains exactly the expected role label;
 - `caller_model_control_attested` and `caller_role_control_attested`: the recorded caller schema exposes the corresponding fields;
 - `caller_model_controls_consistent`: caller model controls were recorded and the effective model/reasoning match; this still does not prove which values the caller passed;

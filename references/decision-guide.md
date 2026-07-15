@@ -109,7 +109,32 @@ Use the runtime's actual cap. Count the controller when the runtime does.
 - Use three children only for three genuinely independent workstreams.
 - Leave room for the controller and later review.
 - Keep nesting depth at one unless recursive delegation is explicitly required and tested.
+- The recursion exception never applies to standalone support pods; pods always keep `max_depth = 1`.
 - More agents do not help when they share assumptions, touch the same files, or depend on the same result.
+
+### Bounded standalone pods
+
+When exact model/reasoning and high parallel throughput both matter, flatten
+model routing at the standalone-task layer and allow bounded fan-out below it:
+
+- create the standalone pod with the exact audited model/reasoning;
+- record live `available_child_slots` with evidence, then let the pod launch no more than `min(3, available_child_slots)` read-only internal children only for two or more substantial independent workstreams;
+- give every child a disjoint scope and a complete leaf behavior contract;
+- keep `max_depth = 1`, so children cannot spawn descendants or new standalone tasks;
+- verify every child session. On the verified build children inherited the pod root, but observed inheritance is not caller-controlled routing and must not be promised on another build;
+- if a child must have exact settings and mismatches, return that scope to the controller for a new exact standalone pod.
+
+Use pods in waves. Discovery pods run before implementation; reviewer pods run
+only after the diff is stable. Do not launch every role at once merely to raise
+the agent count.
+
+On the verified four-slot host, the main task, one standalone pod root, and two
+pod children filled the working wave. Admit a third child only when current
+capacity evidence shows another slot; do not infer standalone tasks use a
+separate unlimited pool.
+On that four-slot host, choose one Luna or Terra discovery pod per wave. Multiple
+pod roots may run together only when aggregate host admission for the entire
+wave passes; per-pod slot claims must not double-count the same capacity.
 
 ## Context inheritance
 
@@ -127,11 +152,11 @@ role labels, and custom-profile provenance separately.
 
 ### Normal material change
 
-1. Spawn one or two generic internal children with bounded scout behavior contracts, or use authorized Terra/medium standalone support tasks when exact settings matter.
+1. Spawn one or two generic internal children with bounded scout behavior contracts, or use an authorized Terra/medium standalone pod with up to three read-only leaf children when exact settings and enough independent scope justify it.
 2. Let the controller read foundational documents and exact edit targets.
 3. Integrate evidence and implement as the sole shared-tree writer.
 4. Run focused tests.
-5. Spawn one generic internal child with the reviewer behavior contract against the stable diff, or use an authorized Sol/high standalone support task when exact settings matter.
+5. Spawn one generic internal child with the reviewer behavior contract against the stable diff, or use an authorized Sol/high standalone reviewer pod with disjoint read-only leaf reviews when exact settings matter.
 6. Fix findings and run final gates.
 
 ### High-risk change

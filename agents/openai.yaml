@@ -1,4 +1,4 @@
 interface:
   display_name: "Optimize Codex Subagents"
   short_description: "Speed up live Codex projects safely"
-  default_prompt: "Use $optimize-codex-subagents for this task; I explicitly authorize you, when exact model and reasoning materially improve time to trustworthy completion, to create, monitor, integrate, and archive read-only standalone support tasks using the Skill's audited mapping, while keeping this main task as the sole writer."
+  default_prompt: "Use $optimize-codex-subagents for this task; I explicitly authorize you, when exact model and reasoning materially improve time to trustworthy completion, to create, monitor, integrate, and archive read-only standalone support pods using the Skill's audited mapping, and to let each pod fan out to at most three read-only internal children for substantial independent workstreams, with no deeper nesting and this main task as the sole writer."

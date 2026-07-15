@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,9 @@ from verify_subagent_session import THREAD_ID_RE, build_session_index, inspect_t
 HERE = Path(__file__).resolve().parent
 DEFAULT_POLICY = HERE.parent / "references" / "routing-policy-v1.json"
 SURFACES = {"internal-child", "standalone-support"}
+DISPATCH_MARKER_RE = re.compile(
+    r"^ROUTING-DISPATCH-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+)
 
 
 def reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -139,6 +143,12 @@ def validate_manifest(
     if not isinstance(dispatches, list) or not dispatches:
         raise ValueError("manifest.dispatches must be a non-empty array")
 
+    controller_thread_id = manifest.get("controller_thread_id")
+    if not isinstance(controller_thread_id, str) or not THREAD_ID_RE.fullmatch(
+        controller_thread_id
+    ):
+        raise ValueError("manifest.controller_thread_id must be a canonical thread UUID")
+
     surface_capabilities = manifest.get("surface_capabilities")
     if not isinstance(surface_capabilities, dict):
         raise ValueError("manifest.surface_capabilities must be an object")
@@ -159,8 +169,8 @@ def validate_manifest(
     child_ids: set[str] = set()
     markers: set[str] = set()
     writer_workspaces: set[str] = set()
-    all_risk_flags: set[str] = set()
-    covered_risk_flags: set[str] = set()
+    risky_dispatches: dict[str, set[str]] = {}
+    high_risk_reviews: list[tuple[str, set[str], set[str]]] = []
     high_risk_role = policy["high_risk_role"]
     writer_role = policy["writer_role"]
     high_risk_flags = set(
@@ -186,11 +196,17 @@ def validate_manifest(
             raise ValueError(f"{label}.child_thread_id must be a canonical thread UUID")
         if child_id in child_ids:
             raise ValueError(f"duplicate child_thread_id: {child_id}")
+        if child_id == controller_thread_id:
+            raise ValueError(
+                f"{label}.child_thread_id must differ from controller_thread_id"
+            )
         child_ids.add(child_id)
 
         marker = dispatch.get("dispatch_marker")
-        if not isinstance(marker, str) or len(marker.strip()) < 12:
-            raise ValueError(f"{label}.dispatch_marker must contain at least 12 characters")
+        if not isinstance(marker, str) or not DISPATCH_MARKER_RE.fullmatch(marker):
+            raise ValueError(
+                f"{label}.dispatch_marker must match ROUTING-DISPATCH-<canonical UUID>"
+            )
         if marker in markers:
             raise ValueError(f"duplicate dispatch_marker: {marker}")
         markers.add(marker)
@@ -198,6 +214,8 @@ def validate_manifest(
         role = dispatch.get("role")
         if not is_nonempty_string(role):
             raise ValueError(f"{label}.role must be a non-empty string")
+        if role not in policy["roles"]:
+            raise ValueError(f"{label}.role is not defined by policy: {role}")
         surface = dispatch.get("surface")
         if surface not in SURFACES:
             raise ValueError(f"{label}.surface is invalid")
@@ -226,9 +244,20 @@ def validate_manifest(
             raise ValueError(f"{label} has flags without evidence: {missing_evidence}")
 
         flagged_risks = high_risk_flags & set(flags)
-        all_risk_flags.update(flagged_risks)
+        if flagged_risks and role != high_risk_role:
+            risky_dispatches[str(dispatch_id)] = flagged_risks
         if role == high_risk_role:
-            covered_risk_flags.update(flagged_risks)
+            reviewed_dispatch_ids = validate_string_list(
+                dispatch.get("reviewed_dispatch_ids", []),
+                f"{label}.reviewed_dispatch_ids",
+            )
+            if not reviewed_dispatch_ids:
+                raise ValueError(
+                    f"{label}.reviewed_dispatch_ids must name at least one risky dispatch"
+                )
+            high_risk_reviews.append(
+                (str(dispatch_id), set(reviewed_dispatch_ids), set(flags))
+            )
 
         if role == writer_role:
             workspace_id = dispatch.get("workspace_id")
@@ -251,12 +280,131 @@ def validate_manifest(
                     f"{label}.independent_part_evidence has fewer items than independent_parts"
                 )
 
-    uncovered_risks = sorted(all_risk_flags - covered_risk_flags)
+    risky_dispatch_ids = set(risky_dispatches)
+    for reviewer_id, reviewed_ids, _reviewer_flags in high_risk_reviews:
+        unknown_ids = sorted(reviewed_ids - dispatch_ids)
+        if unknown_ids:
+            raise ValueError(
+                f"high-risk reviewer references unknown reviewed_dispatch_ids: {unknown_ids}"
+            )
+        non_risky_ids = sorted(reviewed_ids - risky_dispatch_ids)
+        if non_risky_ids:
+            raise ValueError(
+                f"high-risk reviewer {reviewer_id} must reference only risky dispatches: "
+                f"{non_risky_ids}"
+            )
+    uncovered_risks = {
+        dispatch_id: sorted(risks)
+        for dispatch_id, risks in risky_dispatches.items()
+        if not any(
+            dispatch_id in reviewed_ids and risks <= reviewer_flags
+            for _reviewer_id, reviewed_ids, reviewer_flags in high_risk_reviews
+        )
+    }
     if uncovered_risks:
         raise ValueError(
-            "high-risk flags require a matching high-risk-reviewer dispatch: "
+            "high-risk dispatches require explicit same-wave reviewer coverage: "
             f"{uncovered_risks}"
         )
+
+    dispatch_by_child = {str(item["child_thread_id"]): item for item in dispatches}
+    pod_children: dict[str, list[dict[str, Any]]] = {}
+    for dispatch in dispatches:
+        if dispatch["surface"] != "internal-child":
+            continue
+        parent_id = str(dispatch["parent_thread_id"])
+        if parent_id == controller_thread_id:
+            continue
+        parent = dispatch_by_child.get(parent_id)
+        if parent is None:
+            raise ValueError(
+                f"internal child parent {parent_id} is neither controller_thread_id nor a manifest dispatch"
+            )
+        if parent["surface"] == "internal-child":
+            raise ValueError(
+                "max_depth = 1 violation: internal child cannot parent another dispatch"
+            )
+        pod_children.setdefault(parent_id, []).append(dispatch)
+
+    for pod_id, children in pod_children.items():
+        pod = dispatch_by_child[pod_id]
+        pod_role = str(pod["role"])
+        pod_required_flags = set(
+            policy["roles"][pod_role].get("required_all_flags", [])
+        )
+        if pod_role == writer_role or "read_only" not in pod_required_flags:
+            raise ValueError(
+                f"standalone pod {pod_id} requires a policy-defined read-only role; "
+                "writer and controller roles cannot coordinate pod children"
+            )
+        if "read_only" not in pod["flags"]:
+            raise ValueError(f"standalone pod {pod_id} requires the read_only flag")
+        for child in children:
+            child_id = str(child["child_thread_id"])
+            child_role = str(child["role"])
+            child_required_flags = set(
+                policy["roles"][child_role].get("required_all_flags", [])
+            )
+            if child_role == writer_role or "read_only" not in child_required_flags:
+                raise ValueError(
+                    f"standalone pod leaf {child_id} requires a policy-defined "
+                    "read-only role; writer roles are forbidden"
+                )
+            if "read_only" not in child["flags"]:
+                raise ValueError(
+                    f"standalone pod leaf {child_id} requires the read_only flag"
+                )
+        if len(children) > 3:
+            raise ValueError(f"standalone pod {pod_id} exceeds three internal children")
+        if type(pod.get("independent_parts")) is not int or pod["independent_parts"] < 2:
+            raise ValueError(
+                f"standalone pod {pod_id} requires at least two independent_parts"
+            )
+        if len(children) > pod["independent_parts"]:
+            raise ValueError(
+                f"standalone pod {pod_id} has more children than independent_parts: "
+                f"{len(children)} > {pod['independent_parts']}"
+            )
+        available_slots = pod.get("available_child_slots")
+        if type(available_slots) is not int or not 0 <= available_slots <= 3:
+            raise ValueError(
+                f"standalone pod {pod_id}.available_child_slots must be an integer from 0 to 3"
+            )
+        if not has_evidence(pod.get("capacity_evidence")):
+            raise ValueError(f"standalone pod {pod_id}.capacity_evidence is required")
+        if len(children) > available_slots:
+            raise ValueError(
+                f"standalone pod {pod_id} exceeds available_child_slots: "
+                f"{len(children)} > {available_slots}"
+            )
+
+    if pod_children:
+        wave_capacity = manifest.get("wave_capacity")
+        if not isinstance(wave_capacity, dict):
+            raise ValueError("manifest.wave_capacity is required for pod waves")
+        thread_cap = wave_capacity.get("thread_cap")
+        occupied_before_wave = wave_capacity.get("occupied_before_wave")
+        if type(thread_cap) is not int or thread_cap < 1:
+            raise ValueError("manifest.wave_capacity.thread_cap must be a positive integer")
+        if (
+            type(occupied_before_wave) is not int
+            or occupied_before_wave < 1
+            or occupied_before_wave > thread_cap
+        ):
+            raise ValueError(
+                "manifest.wave_capacity.occupied_before_wave must include the live controller "
+                "and be between 1 and thread_cap"
+            )
+        if not has_evidence(wave_capacity.get("evidence")):
+            raise ValueError("manifest.wave_capacity.evidence is required")
+        dispatched_wave_threads = {
+            str(dispatch["child_thread_id"]) for dispatch in dispatches
+        }
+        if occupied_before_wave + len(dispatched_wave_threads) > thread_cap:
+            raise ValueError(
+                "pod wave exceeds aggregate host capacity: "
+                f"{occupied_before_wave} + {len(dispatched_wave_threads)} > {thread_cap}"
+            )
     return dispatches
 
 
@@ -270,6 +418,7 @@ def empty_result(dispatch_id: str, role: object, failure: str) -> dict[str, Any]
         "session_identity_passed": False,
         "effective_model_match_passed": False,
         "sandbox_passed": False,
+        "sandbox_status": "failed",
         "role_label_match": False,
         "custom_profile_proven": False,
         "caller_model_control_attested": False,
@@ -450,11 +599,19 @@ def validate_dispatch(
     attested_preconditions_passed = not policy_failures
     session_identity_passed = not identity_failures
     effective_model_match_passed = session_identity_passed and not model_failures
-    sandbox_passed = session_identity_passed and not sandbox_failures
+    if expected_sandbox is None:
+        sandbox_status = "not_pinned"
+        sandbox_passed: bool | None = None
+    elif session_identity_passed and not sandbox_failures:
+        sandbox_status = "verified"
+        sandbox_passed = True
+    else:
+        sandbox_status = "failed"
+        sandbox_passed = False
     profile_consistency_passed = (
         attested_preconditions_passed
         and effective_model_match_passed
-        and sandbox_passed
+        and sandbox_status != "failed"
     )
     caller_model_controls_consistent = (
         caller_model_control_attested and effective_model_match_passed
@@ -469,6 +626,7 @@ def validate_dispatch(
         "session_identity_passed": session_identity_passed,
         "effective_model_match_passed": effective_model_match_passed,
         "sandbox_passed": sandbox_passed,
+        "sandbox_status": sandbox_status,
         "role_label_match": role_label_match,
         "custom_profile_proven": custom_profile_proven,
         "caller_model_control_attested": caller_model_control_attested,

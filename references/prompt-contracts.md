@@ -2,10 +2,31 @@
 
 These contracts constrain task behavior. They do not prove that an internal child selected a custom model or named role. Verify effective session metadata separately.
 
-When recording a routing manifest, include a unique line such as
-`Dispatch marker: ROUTING-DISPATCH-<UUID>` in the initial child or standalone
-support prompt and copy that exact value into `dispatch_marker`. The marker is a
-correlation ID, not a secret or cryptographic signature.
+When recording a routing manifest, put a canonical marker on its own otherwise
+empty line in the initial child or standalone support prompt, for example
+`ROUTING-DISPATCH-123e4567-e89b-42d3-a456-426614174000`, and copy that exact
+value into `dispatch_marker`. Do not add a `Dispatch marker:` label on the same
+line: verification deliberately requires an exact complete-line match. The
+marker is a correlation ID, not a secret or cryptographic signature.
+
+## Standalone support pod coordinator
+
+```text
+Objective: <one bounded support outcome>
+Pod model/reasoning: <caller-controlled and verified standalone settings>
+Independent workstreams: <two or more disjoint scopes that justify fan-out>
+Capacity: <live available_child_slots and evidence>; launch no more than min(3, available_child_slots); top-level occupied_before_wave includes the controller but excludes all dispatches listed in that wave
+Fan-out: launch admitted internal children in one wave; give each a complete leaf contract; no child may spawn descendants or standalone tasks
+Exclusions: the pod root and all children are read-only; no edits, Git, external actions, or overlapping scopes
+Sandbox truth: read-only is behavioral unless session metadata proves the sandbox; the main task records status/diff before and after the wave
+Model evidence: verify every child's effective model/reasoning separately; observed inheritance is not caller-controlled routing
+Return: every leaf thread ID, unique marker, effective model/reasoning, validation evidence pointer, compact findings, contradictions, risks, uncovered areas, and any model mismatch
+Escalation: record every high-risk flag and require a matching high-risk reviewer dispatch before acceptance
+Done when: all launched children finish or are explicitly accounted for and the pod produces one evidence-backed synthesis
+```
+
+Use the leaf contracts below for pod children. Their `no child agents`
+exclusion is intentional and enforces `max_depth = 1`.
 
 ## Scout
 

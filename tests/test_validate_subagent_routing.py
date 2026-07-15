@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import copy
 import contextlib
 import io
 import json
 import sys
 import tempfile
 import unittest
+import uuid
 from pathlib import Path
 from unittest.mock import patch
 
@@ -18,9 +20,16 @@ import verify_subagent_session as session  # noqa: E402
 
 
 POLICY = routing.load_object(SKILL_ROOT / "references" / "routing-policy-v1.json")
-PARENT = "019f6111-4416-7cc1-8748-0b33b7bb3c0a"
-CHILD = "019f6115-f340-7873-80bf-2f8c88c3ba09"
-OTHER_CHILD = "019f6115-f340-7873-80bf-2f8c88c3ba10"
+# Deliberately synthetic UUIDs. Never publish local task or session IDs.
+PARENT = "00000000-0000-4000-8000-000000000001"
+CHILD = "00000000-0000-4000-8000-000000000002"
+OTHER_CHILD = "00000000-0000-4000-8000-000000000003"
+THIRD_CHILD = "00000000-0000-4000-8000-000000000004"
+FOURTH_CHILD = "00000000-0000-4000-8000-000000000005"
+POD = "00000000-0000-4000-8000-000000000006"
+SECOND_POD = "00000000-0000-4000-8000-000000000007"
+FIFTH_CHILD = "00000000-0000-4000-8000-000000000008"
+SIXTH_CHILD = "00000000-0000-4000-8000-000000000009"
 CAPABILITIES = {
     "internal-child": ["task_name", "message", "fork_turns"],
     "standalone-support": ["prompt", "target", "model", "thinking"],
@@ -31,6 +40,10 @@ CAPABILITY_EVIDENCE = {
 }
 
 
+def marker_for(label: str) -> str:
+    return f"ROUTING-DISPATCH-{uuid.uuid5(uuid.NAMESPACE_URL, label)}"
+
+
 def manifest_for(
     dispatches: list[dict[str, object]],
     *,
@@ -38,6 +51,12 @@ def manifest_for(
 ) -> dict[str, object]:
     return {
         "policy_version": version,
+        "controller_thread_id": PARENT,
+        "wave_capacity": {
+            "thread_cap": 4,
+            "occupied_before_wave": 1,
+            "evidence": "active host reports four total slots and one occupied controller",
+        },
         "surface_capabilities": CAPABILITIES,
         "surface_capability_evidence": CAPABILITY_EVIDENCE,
         "dispatches": dispatches,
@@ -51,17 +70,19 @@ def actual_for(
     role: str | None = None,
     source_kind: str = "subagent",
     sandbox: str | None = None,
+    thread_id: str = CHILD,
+    parent_thread_id: str = PARENT,
 ) -> dict[str, object]:
     return {
-        "thread_id": CHILD,
+        "thread_id": thread_id,
         "thread_id_valid": True,
         "file_count": 1,
-        "session_ids": [CHILD],
+        "session_ids": [thread_id],
         "models": [model],
         "reasoning_efforts": [reasoning],
         "agent_types": [role] if role else [],
         "sandbox_modes": [sandbox] if sandbox else [],
-        "parent_thread_ids": [PARENT] if source_kind == "subagent" else [],
+        "parent_thread_ids": [parent_thread_id] if source_kind == "subagent" else [],
         "source_kind": source_kind,
         "source_is_subagent": source_kind == "subagent",
         "turn_context_count": 1,
@@ -84,7 +105,7 @@ def dispatch_for(
     selected_surface = surface or spec["candidate_surfaces"][0]
     value: dict[str, object] = {
         "dispatch_id": f"{role}-{suffix}",
-        "dispatch_marker": f"ROUTING-DISPATCH-{role}-{suffix}",
+        "dispatch_marker": marker_for(f"{role}-{suffix}"),
         "role": role,
         "surface": selected_surface,
         "child_thread_id": child_id,
@@ -107,6 +128,41 @@ def dispatch_for(
     return value
 
 
+def pod_dispatches(
+    child_count: int = 2,
+    *,
+    available_child_slots: int = 2,
+    independent_parts: int = 2,
+    pod_id: str = POD,
+    child_ids: list[str] | None = None,
+    suffix_prefix: str = "pod",
+) -> list[dict[str, object]]:
+    flags = ["read_only", "read_heavy", "bounded"]
+    pod = dispatch_for(
+        "scout",
+        flags,
+        independent_parts=independent_parts,
+        surface="standalone-support",
+        child_id=pod_id,
+        suffix=f"{suffix_prefix}-root",
+    )
+    pod["available_child_slots"] = available_child_slots
+    pod["capacity_evidence"] = "active host reports available child slots"
+    selected_child_ids = child_ids or [CHILD, OTHER_CHILD, THIRD_CHILD, FOURTH_CHILD]
+    leaves: list[dict[str, object]] = []
+    for index in range(child_count):
+        leaf = dispatch_for(
+            "scout",
+            flags,
+            surface="internal-child",
+            child_id=selected_child_ids[index],
+            suffix=f"{suffix_prefix}-leaf-{index + 1}",
+        )
+        leaf["parent_thread_id"] = pod_id
+        leaves.append(leaf)
+    return [pod, *leaves]
+
+
 def write_rollout(
     root: Path,
     *,
@@ -116,25 +172,33 @@ def write_rollout(
     model: str = "gpt-5.6-terra",
     reasoning: str = "medium",
     sandbox: str = "read-only",
-    marker: str = "ROUTING-DISPATCH-scout-one",
+    marker: str = marker_for("scout-one"),
     bom: bool = False,
     extra_records: list[dict[str, object]] | None = None,
+    misleading_standalone_response: bool = False,
+    standalone_source: object | None = None,
+    standalone_thread_source: object | None = None,
+    subagent_source: object | None = None,
+    parent_thread_id: str = PARENT,
 ) -> Path:
     session_dir = root / "sessions" / "2026" / "07" / "14"
     session_dir.mkdir(parents=True)
     path = session_dir / f"rollout-example-{thread_id}.jsonl"
     if source_kind == "subagent":
-        source: object = {
+        source: object = subagent_source if subagent_source is not None else {
             "subagent": {
                 "thread_spawn": {
-                    "parent_thread_id": PARENT,
+                    "agent_nickname": "Synthetic Scout",
+                    "agent_path": "synthetic/scout",
                     "agent_role": role,
+                    "depth": 1,
+                    "parent_thread_id": parent_thread_id,
                 }
             }
         }
         meta: dict[str, object] = {
             "id": thread_id,
-            "parent_thread_id": PARENT,
+            "parent_thread_id": parent_thread_id,
             "source": source,
         }
         prompt = {
@@ -147,7 +211,12 @@ def write_rollout(
             },
         }
     else:
-        meta = {"id": thread_id, "source": {"app": "desktop"}}
+        meta = {
+            "id": thread_id,
+            "source": standalone_source if standalone_source is not None else {"app": "desktop"},
+        }
+        if standalone_thread_source is not None:
+            meta["thread_source"] = standalone_thread_source
         prompt = {
             "type": "event_msg",
             "payload": {"type": "user_message", "message": marker},
@@ -162,8 +231,19 @@ def write_rollout(
                 "sandbox_policy": {"type": sandbox},
             },
         },
-        prompt,
     ]
+    if misleading_standalone_response and source_kind == "standalone":
+        records.append(
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": "context contribution without the dispatch marker",
+                },
+            }
+        )
+    records.append(prompt)
     if extra_records:
         records.extend(extra_records)
     encoding = "utf-8-sig" if bom else "utf-8"
@@ -303,6 +383,24 @@ class RoutingPolicyTests(unittest.TestCase):
         self.assertFalse(result["custom_profile_proven"])
         self.assertTrue(result["diagnostic_passed"])
 
+    def test_unpinned_sandbox_is_reported_as_not_pinned(self) -> None:
+        result = self.validate(dispatch_for("controller", []))
+        self.assertIsNone(result["sandbox_passed"])
+        self.assertEqual(result["sandbox_status"], "not_pinned")
+        self.assertTrue(result["profile_consistency_passed"])
+
+    def test_unknown_role_uses_complete_failed_sandbox_schema(self) -> None:
+        case = dispatch_for("controller", [])
+        case["role"] = "unknown-role"
+        result = routing.validate_dispatch(
+            case,
+            POLICY,
+            Path("unused"),
+            surface_capabilities=CAPABILITIES,
+        )
+        self.assertFalse(result["sandbox_passed"])
+        self.assertEqual(result["sandbox_status"], "failed")
+
     def test_current_internal_schema_cannot_attest_caller_control(self) -> None:
         case = dispatch_for("scout", ["read_only", "read_heavy", "bounded"])
         result = self.validate(case)
@@ -341,7 +439,7 @@ class RoutingPolicyTests(unittest.TestCase):
     def test_parent_mismatch_is_rejected(self) -> None:
         case = dispatch_for("reviewer", ["read_only", "stable_diff"])
         actual = actual_for("gpt-5.6-sol", "high", role="reviewer", sandbox="read-only")
-        actual["parent_thread_ids"] = ["019f6111-6609-7113-9af3-7ba914e70539"]
+        actual["parent_thread_ids"] = ["00000000-0000-4000-8000-000000000099"]
         with patch.object(routing, "inspect_thread", return_value=actual):
             result = routing.validate_dispatch(
                 case,
@@ -405,7 +503,7 @@ class RoutingPolicyTests(unittest.TestCase):
             "scout",
             ["read_only", "read_heavy", "bounded", "security"],
         )
-        with self.assertRaisesRegex(ValueError, "high-risk flags require"):
+        with self.assertRaisesRegex(ValueError, "explicit same-wave reviewer coverage"):
             routing.validate_manifest(manifest_for([scout]), POLICY)
 
         reviewer = dispatch_for(
@@ -414,6 +512,7 @@ class RoutingPolicyTests(unittest.TestCase):
             child_id=OTHER_CHILD,
             suffix="two",
         )
+        reviewer["reviewed_dispatch_ids"] = [scout["dispatch_id"]]
         routing.validate_manifest(manifest_for([scout, reviewer]), POLICY)
 
     def test_writer_workspace_must_be_unique(self) -> None:
@@ -427,6 +526,223 @@ class RoutingPolicyTests(unittest.TestCase):
         second["workspace_id"] = first["workspace_id"]
         with self.assertRaisesRegex(ValueError, "multiple writer dispatches"):
             routing.validate_manifest(manifest_for([first, second]), POLICY)
+
+    def test_valid_standalone_pod_respects_capacity_and_depth(self) -> None:
+        dispatches = routing.validate_manifest(manifest_for(pod_dispatches()), POLICY)
+        self.assertEqual(len(dispatches), 3)
+
+    def test_standalone_pod_rejects_more_than_three_children(self) -> None:
+        with self.assertRaisesRegex(ValueError, "exceeds three internal children"):
+            routing.validate_manifest(
+                manifest_for(pod_dispatches(4, available_child_slots=3)), POLICY
+            )
+
+    def test_standalone_pod_rejects_capacity_overcommit(self) -> None:
+        with self.assertRaisesRegex(ValueError, "exceeds available_child_slots"):
+            routing.validate_manifest(
+                manifest_for(
+                    pod_dispatches(
+                        3,
+                        available_child_slots=2,
+                        independent_parts=3,
+                    )
+                ),
+                POLICY,
+            )
+
+    def test_standalone_pod_requires_two_independent_parts(self) -> None:
+        with self.assertRaisesRegex(ValueError, "at least two independent_parts"):
+            routing.validate_manifest(
+                manifest_for(pod_dispatches(independent_parts=1)), POLICY
+            )
+
+    def test_standalone_pod_requires_one_independent_part_per_child(self) -> None:
+        with self.assertRaisesRegex(ValueError, "more children than independent_parts"):
+            routing.validate_manifest(
+                manifest_for(
+                    pod_dispatches(
+                        3,
+                        available_child_slots=3,
+                        independent_parts=2,
+                    )
+                ),
+                POLICY,
+            )
+
+    def test_internal_child_cannot_parent_grandchild(self) -> None:
+        dispatches = pod_dispatches()
+        dispatches[2]["parent_thread_id"] = CHILD
+        with self.assertRaisesRegex(ValueError, "max_depth = 1 violation"):
+            routing.validate_manifest(manifest_for(dispatches), POLICY)
+
+    def test_standalone_pod_requires_capacity_evidence(self) -> None:
+        dispatches = pod_dispatches()
+        dispatches[0].pop("capacity_evidence")
+        with self.assertRaisesRegex(ValueError, "capacity_evidence is required"):
+            routing.validate_manifest(manifest_for(dispatches), POLICY)
+
+    def test_writer_or_controller_cannot_coordinate_pod_children(self) -> None:
+        for role in ("writer", "controller"):
+            with self.subTest(role=role):
+                dispatches = pod_dispatches()
+                dispatches[0]["role"] = role
+                if role == "writer":
+                    dispatches[0]["workspace_id"] = "synthetic-workspace"
+                with self.assertRaisesRegex(ValueError, "read-only role"):
+                    routing.validate_manifest(manifest_for(dispatches), POLICY)
+
+    def test_adapted_policy_cannot_use_unsafe_role_for_pod_leaf(self) -> None:
+        adapted_policy = copy.deepcopy(POLICY)
+        adapted_policy["roles"]["unsafe-leaf"] = {
+            "model": "gpt-5.6-terra",
+            "reasoning": "medium",
+            "required_all_flags": [],
+            "candidate_surfaces": ["internal-child"],
+        }
+        dispatches = pod_dispatches()
+        dispatches[1]["role"] = "unsafe-leaf"
+        dispatches[1]["flags"] = ["read_heavy", "bounded"]
+        dispatches[1]["flag_evidence"].pop("read_only")
+        with self.assertRaisesRegex(ValueError, "pod leaf.*read-only role"):
+            routing.validate_manifest(manifest_for(dispatches), adapted_policy)
+
+    def test_pod_wave_capacity_must_include_live_controller(self) -> None:
+        manifest = manifest_for(pod_dispatches())
+        manifest["wave_capacity"]["occupied_before_wave"] = 0
+        with self.assertRaisesRegex(ValueError, "include the live controller"):
+            routing.validate_manifest(manifest, POLICY)
+
+    def test_omitted_non_controller_parent_is_rejected(self) -> None:
+        leaf = pod_dispatches()[1]
+        with self.assertRaisesRegex(ValueError, "neither controller_thread_id"):
+            routing.validate_manifest(manifest_for([leaf]), POLICY)
+
+    def test_two_pods_cannot_double_count_one_host_capacity(self) -> None:
+        first = pod_dispatches(1, available_child_slots=1)
+        second = pod_dispatches(
+            1,
+            available_child_slots=1,
+            pod_id=SECOND_POD,
+            child_ids=[FIFTH_CHILD, SIXTH_CHILD],
+            suffix_prefix="second-pod",
+        )
+        with self.assertRaisesRegex(ValueError, "aggregate host capacity"):
+            routing.validate_manifest(manifest_for([*first, *second]), POLICY)
+
+    def test_pod_wave_capacity_counts_non_pod_dispatches_too(self) -> None:
+        dispatches = pod_dispatches()
+        direct_child = dispatch_for(
+            "scout",
+            ["read_only", "read_heavy", "bounded"],
+            child_id=THIRD_CHILD,
+            suffix="direct-child",
+        )
+        with self.assertRaisesRegex(ValueError, "aggregate host capacity"):
+            routing.validate_manifest(
+                manifest_for([*dispatches, direct_child]), POLICY
+            )
+
+    def test_dispatched_child_cannot_reuse_controller_thread_id(self) -> None:
+        case = dispatch_for(
+            "scout",
+            ["read_only", "read_heavy", "bounded"],
+            child_id=PARENT,
+        )
+        with self.assertRaisesRegex(ValueError, "differ from controller_thread_id"):
+            routing.validate_manifest(manifest_for([case]), POLICY)
+
+    def test_dispatch_marker_requires_canonical_uuid(self) -> None:
+        case = dispatch_for("controller", [])
+        case["dispatch_marker"] = "ROUTING-DISPATCH-UUID"
+        with self.assertRaisesRegex(ValueError, "canonical UUID"):
+            routing.validate_manifest(manifest_for([case]), POLICY)
+
+    def test_manifest_rejects_role_missing_from_policy(self) -> None:
+        case = dispatch_for("controller", [])
+        case["role"] = "unknown-role"
+        with self.assertRaisesRegex(ValueError, "not defined by policy"):
+            routing.validate_manifest(manifest_for([case]), POLICY)
+
+    def test_high_risk_reviewer_must_name_the_risky_dispatch(self) -> None:
+        scout = dispatch_for(
+            "scout", ["read_only", "read_heavy", "bounded", "security"]
+        )
+        reviewer = dispatch_for(
+            "high-risk-reviewer",
+            ["read_only", "security"],
+            child_id=OTHER_CHILD,
+            suffix="reviewer",
+        )
+        reviewer["reviewed_dispatch_ids"] = ["unrelated-dispatch"]
+        with self.assertRaisesRegex(ValueError, "unknown reviewed_dispatch_ids"):
+            routing.validate_manifest(manifest_for([scout, reviewer]), POLICY)
+
+    def test_high_risk_reviewer_rejects_empty_or_non_risky_scope(self) -> None:
+        ordinary = dispatch_for(
+            "scout", ["read_only", "read_heavy", "bounded"]
+        )
+        reviewer = dispatch_for(
+            "high-risk-reviewer",
+            ["read_only", "security"],
+            child_id=OTHER_CHILD,
+            suffix="reviewer-empty",
+        )
+        with self.assertRaisesRegex(ValueError, "at least one risky dispatch"):
+            routing.validate_manifest(manifest_for([ordinary, reviewer]), POLICY)
+
+        reviewer["reviewed_dispatch_ids"] = [ordinary["dispatch_id"]]
+        with self.assertRaisesRegex(ValueError, "only risky dispatches"):
+            routing.validate_manifest(manifest_for([ordinary, reviewer]), POLICY)
+
+    def test_pod_root_and_leaf_sessions_validate_end_to_end(self) -> None:
+        dispatches = pod_dispatches()
+        routing.validate_manifest(manifest_for(dispatches), POLICY)
+        for dispatch in dispatches:
+            source_kind = (
+                "subagent" if dispatch["surface"] == "internal-child" else "standalone"
+            )
+            with patch.object(
+                routing,
+                "inspect_thread",
+                return_value=actual_for(
+                    str(dispatch["intended_model"]),
+                    str(dispatch["intended_reasoning"]),
+                    source_kind=source_kind,
+                    sandbox="read-only",
+                    thread_id=str(dispatch["child_thread_id"]),
+                    parent_thread_id=str(dispatch.get("parent_thread_id", PARENT)),
+                ),
+            ):
+                result = routing.validate_dispatch(
+                    dispatch,
+                    POLICY,
+                    Path("unused"),
+                    surface_capabilities=CAPABILITIES,
+                )
+            self.assertTrue(result["session_identity_passed"])
+            self.assertTrue(result["effective_model_match_passed"])
+            self.assertEqual(result["sandbox_status"], "verified")
+
+        leaf = dispatches[1]
+        with patch.object(
+            routing,
+            "inspect_thread",
+            return_value=actual_for(
+                str(leaf["intended_model"]),
+                str(leaf["intended_reasoning"]),
+                source_kind="subagent",
+                sandbox="read-only",
+                thread_id=str(leaf["child_thread_id"]),
+                parent_thread_id=PARENT,
+            ),
+        ):
+            mismatch = routing.validate_dispatch(
+                leaf,
+                POLICY,
+                Path("unused"),
+                surface_capabilities=CAPABILITIES,
+            )
+        self.assertFalse(mismatch["session_identity_passed"])
 
     def test_standalone_parent_and_child_equal_parent_are_rejected(self) -> None:
         standalone = dispatch_for("controller", [])
@@ -464,7 +780,7 @@ class SessionInspectionTests(unittest.TestCase):
             result = session.inspect_thread(
                 root,
                 CHILD,
-                "ROUTING-DISPATCH-scout-one",
+                marker_for("scout-one"),
             )
         self.assertEqual(result["session_ids"], [CHILD])
         self.assertEqual(result["parent_thread_ids"], [PARENT])
@@ -524,16 +840,110 @@ class SessionInspectionTests(unittest.TestCase):
                 model="gpt-5.6-sol",
                 reasoning="high",
                 sandbox="workspace-write",
-                marker="ROUTING-DISPATCH-controller-one",
+                marker=marker_for("controller-one"),
             )
             result = session.inspect_thread(
                 root,
                 CHILD,
-                "ROUTING-DISPATCH-controller-one",
+                marker_for("controller-one"),
             )
         self.assertEqual(result["source_kind"], "standalone")
         self.assertEqual(result["parent_thread_ids"], [])
         self.assertTrue(result["dispatch_marker_found"])
+
+    def test_standalone_authoritative_event_beats_earlier_user_context(self) -> None:
+        marker = marker_for("controller-authoritative")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_rollout(
+                root,
+                source_kind="standalone",
+                role=None,
+                marker=marker,
+                misleading_standalone_response=True,
+            )
+            result = session.inspect_thread(root, CHILD, marker)
+
+        self.assertTrue(result["dispatch_marker_found"])
+        self.assertTrue(session.record_is_valid(result, marker_required=True))
+
+    def test_standalone_marker_substring_is_rejected(self) -> None:
+        marker = marker_for("substring")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_rollout(
+                root,
+                source_kind="standalone",
+                role=None,
+                marker=marker + "-suffix",
+            )
+            result = session.inspect_thread(root, CHILD, marker)
+        self.assertFalse(result["dispatch_marker_found"])
+
+    def test_marker_with_same_line_label_prefix_is_rejected(self) -> None:
+        marker = marker_for("label-prefix")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_rollout(
+                root,
+                source_kind="standalone",
+                role=None,
+                marker=f"Dispatch marker: {marker}",
+            )
+            result = session.inspect_thread(root, CHILD, marker)
+        self.assertFalse(result["dispatch_marker_found"])
+
+    def test_unknown_source_is_not_classified_as_standalone(self) -> None:
+        cases = [
+            ({"future": "unknown"}, None),
+            (123, "app"),
+            ([], "desktop"),
+        ]
+        for source_value, thread_source in cases:
+            with self.subTest(source=source_value, thread_source=thread_source):
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    root = Path(temp_dir)
+                    write_rollout(
+                        root,
+                        source_kind="standalone",
+                        role=None,
+                        standalone_source=source_value,
+                        standalone_thread_source=thread_source,
+                    )
+                    result = session.inspect_thread(root, CHILD)
+                self.assertEqual(result["source_kind"], "unknown")
+                self.assertFalse(session.record_is_valid(result, marker_required=False))
+
+    def test_unknown_subagent_source_shapes_fail_closed(self) -> None:
+        known_spawn = {
+            "agent_nickname": "Synthetic Scout",
+            "agent_path": "synthetic/scout",
+            "agent_role": "scout",
+            "depth": 1,
+            "parent_thread_id": PARENT,
+        }
+        cases = [
+            {"subagent": {}},
+            {"subagent": {"thread_spawn": known_spawn}, "future": "unknown"},
+            {"subagent": {"thread_spawn": {**known_spawn, "future": "unknown"}}},
+        ]
+        for source_value in cases:
+            with self.subTest(source=source_value):
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    root = Path(temp_dir)
+                    write_rollout(root, subagent_source=source_value)
+                    result = session.inspect_thread(root, CHILD)
+                self.assertEqual(result["source_kind"], "unknown")
+                self.assertFalse(session.record_is_valid(result, marker_required=False))
+
+    def test_noncanonical_subagent_parent_fails_record_validation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            write_rollout(root, parent_thread_id="not-a-canonical-uuid")
+            result = session.inspect_thread(root, CHILD)
+        self.assertEqual(result["source_kind"], "subagent")
+        self.assertEqual(result["parent_thread_ids"], ["not-a-canonical-uuid"])
+        self.assertFalse(session.record_is_valid(result, marker_required=False))
 
     def test_partial_thread_id_is_rejected_before_file_search(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -613,20 +1023,45 @@ class SkillPromptContractTests(unittest.TestCase):
         expected_metadata = """interface:
   display_name: "Optimize Codex Subagents"
   short_description: "Speed up live Codex projects safely"
-  default_prompt: "Use $optimize-codex-subagents for this task; I explicitly authorize you, when exact model and reasoning materially improve time to trustworthy completion, to create, monitor, integrate, and archive read-only standalone support tasks using the Skill's audited mapping, while keeping this main task as the sole writer."
+  default_prompt: "Use $optimize-codex-subagents for this task; I explicitly authorize you, when exact model and reasoning materially improve time to trustworthy completion, to create, monitor, integrate, and archive read-only standalone support pods using the Skill's audited mapping, and to let each pod fan out to at most three read-only internal children for substantial independent workstreams, with no deeper nesting and this main task as the sole writer."
 """
-        expected_contract = """## Use explicit standalone-task authorization
+        expected_contract = """## Use explicit standalone-pod authorization
 
 - Treat standalone support-task authorization as present only when the current user message explicitly grants it. The Skill's UI default prompt contains that grant; this file or an `AGENTS.md` rule alone does not.
 - When authorized and exact model/reasoning materially improves time to trustworthy completion, create, monitor, integrate, and archive a short-lived standalone support task. Do not make the user open it or switch models manually.
 - Use the audited target mapping only after verifying host availability: Luna `low` for large mechanical batches, Terra `medium` for bounded read-heavy scouting, Sol `high` for stable-diff review, and Sol `xhigh` for high-risk review.
-- Keep every support task read-only: no file edits, Git operations, external actions, or child agents. Keep the main task as the sole shared-tree writer and final acceptor.
+- Treat each standalone support task as a read-only pod coordinator. When at least two substantial independent workstreams justify the startup cost, let it launch at most three internal children in one parallel wave with disjoint scopes and complete leaf behavior contracts.
+- Before fan-out, record the live available child slots and its evidence, then launch no more than `min(3, available_child_slots)`. When the current four-slot host counts the active main task and pod root, admit at most two pod children at once.
+- Keep the pod root and every internal child read-only: no file edits, Git operations, or external actions. Set `max_depth = 1`; pod children must not spawn descendants or standalone tasks. Keep the main task as the sole shared-tree writer, pod creator, integrator, and final acceptor.
+- Treat read-only as a behavior contract unless effective session metadata proves a read-only sandbox. The live pod test reported `danger-full-access`; capture the main task's status/diff before and after every pod wave and fail the wave on any unexplained write or artifact.
+- Exact model/reasoning controls apply to the standalone pod root. On the verified build, internal children inherited their parent, but inheritance is observed behavior rather than caller-controlled routing. Verify every child session and report any inherited, opaque, or mismatched assignment honestly.
+- If an internal child must have exact settings and its effective model/reasoning does not match the pod root, return the unmet work to the main task so it can create another exact standalone pod; never solve this with deeper nesting.
 - Embed a unique routing marker, verify the effective model/reasoning and sandbox, integrate only evidence-backed results, then archive the support task.
+- Return every leaf's thread ID, unique marker, effective model/reasoning, validation evidence pointer, and any high-risk flags. High-risk flags require a matching high-risk reviewer dispatch before acceptance.
 - Use internal children with complete behavior contracts when exact settings do not justify standalone-task startup. Report their effective settings without claiming caller-controlled routing.
 - If the requested standalone model/reasoning cannot be created or verified, report the fallback and continue with the controller or a generic internal child; never silently claim the intended route succeeded.
 """
         self.assertEqual(metadata, expected_metadata)
         self.assertIn(expected_contract, instructions)
+
+    def test_live_pod_evidence_is_sanitized_and_records_runtime_limits(self) -> None:
+        evidence_path = SKILL_ROOT / "references" / "live-pod-validation-v1.0.3.json"
+        evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+        encoded = json.dumps(evidence, sort_keys=True)
+
+        self.assertEqual(evidence["report_version"], 1)
+        self.assertEqual(evidence["runtime"]["host_thread_cap_observed"], 4)
+        self.assertEqual(len(evidence["runs"]), 2)
+        self.assertNotIn("C:\\\\Users", encoded)
+        self.assertNotRegex(encoded, r"\b019f[0-9a-f-]{28,}\b")
+        self.assertNotRegex(encoded, r"/(?:Users|home)/[A-Za-z0-9._-]+/")
+        for run in evidence["runs"]:
+            self.assertRegex(run["pod_thread_id_sha256"], r"^[0-9a-f]{64}$")
+            self.assertEqual(run["pod_effective_sandbox"], "danger-full-access")
+            self.assertEqual(len(run["children"]), 2)
+            for child in run["children"]:
+                self.assertRegex(child["thread_id_sha256"], r"^[0-9a-f]{64}$")
+                self.assertTrue(child["parent_matches_pod"])
 
 
 if __name__ == "__main__":

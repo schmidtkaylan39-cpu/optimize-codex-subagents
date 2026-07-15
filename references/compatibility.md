@@ -81,6 +81,21 @@ Until then, use one of these evidence-backed paths:
 - generic internal children with complete role prompts, followed by session-metadata verification; never claim Terra/Luna routing when the child inherited the parent;
 - explicitly authorized fresh standalone support tasks created with model and reasoning fields, then unpin/archive them after their result is integrated so each user retains one visible mainline task.
 
+For high-throughput read-only work, a standalone support task may coordinate a
+bounded pod of at most three internal children. Pin and verify the pod root,
+keep `max_depth = 1`, give every child a leaf contract and disjoint scope, and
+inspect every child session. The verified build inherited the pod root's model
+and reasoning in a live probe, but that is observed runtime behavior, not a
+caller model-control field or proof of custom-profile selection. If exact child
+settings are required and a child mismatches, create another exact standalone
+pod from the main task instead of nesting deeper.
+
+The same live probe reported `danger-full-access` for the standalone pod and
+both internal children even though the prompt required read-only behavior.
+Therefore, read-only instructions are not a sandbox boundary on this surface.
+Record the main task's status and diff before and after each pod wave, reject
+unexplained writes or artifacts, and report effective sandbox separately.
+
 ## Validation
 
 Use the installed CLI path, not an unrelated executable on `PATH`.
@@ -96,15 +111,19 @@ Then run a minimal profile-consistency test and inspect the child session to con
 For local session evidence, use:
 
 ```powershell
-python -B scripts\verify_subagent_session.py CHILD_THREAD_ID --dispatch-marker ROUTING-DISPATCH-UUID
+python -B scripts\verify_subagent_session.py CHILD_THREAD_ID --dispatch-marker ROUTING-DISPATCH-123e4567-e89b-42d3-a456-426614174000
 python -B scripts\validate_subagent_routing.py DISPATCH_MANIFEST.json
 ```
 
 Minimal manifest shape for the currently observed schemas:
 
+The UUIDs below are deliberately synthetic examples; never publish local task
+or session IDs.
+
 ```json
 {
   "policy_version": 1,
+  "controller_thread_id": "00000000-0000-4000-8000-000000000001",
   "surface_capabilities": {
     "internal-child": ["task_name", "message", "fork_turns"],
     "standalone-support": ["prompt", "target", "model", "thinking"]
@@ -116,11 +135,11 @@ Minimal manifest shape for the currently observed schemas:
   "dispatches": [
     {
       "dispatch_id": "scout-1",
-      "dispatch_marker": "ROUTING-DISPATCH-UUID",
+      "dispatch_marker": "ROUTING-DISPATCH-123e4567-e89b-42d3-a456-426614174000",
       "role": "scout",
       "surface": "internal-child",
-      "parent_thread_id": "PARENT-UUID",
-      "child_thread_id": "CHILD-UUID",
+      "parent_thread_id": "00000000-0000-4000-8000-000000000001",
+      "child_thread_id": "00000000-0000-4000-8000-000000000002",
       "intended_model": "gpt-5.6-terra",
       "intended_reasoning": "medium",
       "intended_sandbox": "read-only",
@@ -135,6 +154,22 @@ Minimal manifest shape for the currently observed schemas:
 }
 ```
 
+For a pod wave, also record top-level `wave_capacity` with `thread_cap`,
+`occupied_before_wave`, and an evidence pointer. `occupied_before_wave` counts
+active threads that are not represented by any dispatch in this manifest and
+must be captured before launching the listed wave. It is at least one because
+the required controller is never a dispatch, while a listed pod root must not
+be counted twice. Every pod root with children
+requires `independent_parts`, `independent_part_evidence`,
+`available_child_slots`, and `capacity_evidence`. A high-risk reviewer must list
+the exact risky work in `reviewed_dispatch_ids`. Aggregate admission counts
+every dispatch in that wave, including direct children and standalone tasks
+outside the pod, so they cannot hide an overcommit.
+The number of pod children cannot exceed the evidenced independent-part count.
+Only policy roles whose required flags include `read_only` may be a pod root or
+pod leaf. Writer, controller, planning, solver, and any adapted role without
+that policy requirement remain outside pod fan-out on this surface.
+
 Here `role` classifies the workload/behavior contract. It is not a claim that a
 same-named custom TOML was loaded. On the verified internal schema, this example
 also records no caller model or role controls, so an inherited Sol child will
@@ -142,7 +177,10 @@ correctly fail the effective-model consistency check.
 
 The verifier requires a canonical full thread UUID, an exact rollout filename,
 matching primary `session_meta.id`, a parse-clean `turn_context`, and the exact
-marker in the initial prompt. The routing validator reports session identity,
+marker in the initial prompt. For internal children it also requires the
+complete currently observed `subagent.thread_spawn` field shape and a canonical
+parent UUID; empty, partial, or extended unknown shapes fail closed. The routing
+validator reports session identity,
 effective model/reasoning, sandbox, profile consistency, caller controls,
 role-label match, and custom-profile provenance separately. On a build whose
 spawn schema has no role field, an exact standalone
@@ -151,8 +189,13 @@ support profile can pass `profile_consistency_passed` and
 `custom_profile_proven` remain false; that is a behavior contract with exact
 model controls, not custom-role selection.
 
+Sandbox reporting is tri-state: `verified`, `failed`, or `not_pinned`.
+`sandbox_passed` is `null` when policy does not pin a sandbox; never interpret
+that case as verified isolation.
+
 Use one manifest per concurrent wave. A writer requires a unique `workspace_id`,
-and high-risk flags require a matching high-risk reviewer in that wave. The
+and every risky dispatch must be named in a same-wave high-risk reviewer's
+`reviewed_dispatch_ids` with matching risk flags. The
 manifest and rollout files are mutable local evidence, not signed attestation.
 
 ## Permission caveat

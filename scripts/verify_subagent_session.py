@@ -59,6 +59,58 @@ def nested_strings(value: object) -> list[str]:
     return []
 
 
+def marker_in_payload(payload: dict[str, Any], dispatch_marker: str) -> bool:
+    """Match a marker as a complete trimmed prompt line, never a substring."""
+    return any(
+        dispatch_marker == line.strip()
+        for value in nested_strings(payload)
+        for line in value.splitlines()
+    )
+
+
+def is_known_standalone_source(source: object, thread_source: object) -> bool:
+    """Whitelist currently observed standalone source shapes and fail closed."""
+    allowed = {"app", "cli", "desktop", "vscode"}
+    if isinstance(source, str):
+        return source in allowed
+    if isinstance(source, dict):
+        return set(source) == {"app"} and source.get("app") in {"desktop", "vscode"}
+    if source is not None:
+        return False
+    return isinstance(thread_source, str) and thread_source in allowed
+
+
+def known_subagent_spawn(source: object) -> dict[str, Any] | None:
+    """Return the currently observed spawn record only for its exact source shape."""
+    if not isinstance(source, dict) or set(source) != {"subagent"}:
+        return None
+    subagent = source.get("subagent")
+    if not isinstance(subagent, dict) or set(subagent) != {"thread_spawn"}:
+        return None
+    spawn = subagent.get("thread_spawn")
+    expected_keys = {
+        "agent_nickname",
+        "agent_path",
+        "agent_role",
+        "depth",
+        "parent_thread_id",
+    }
+    if not isinstance(spawn, dict) or set(spawn) != expected_keys:
+        return None
+    if not isinstance(spawn.get("agent_nickname"), str) or not spawn["agent_nickname"]:
+        return None
+    if not isinstance(spawn.get("agent_path"), str) or not spawn["agent_path"]:
+        return None
+    role = spawn.get("agent_role")
+    if role is not None and (not isinstance(role, str) or not role):
+        return None
+    if type(spawn.get("depth")) is not int or spawn["depth"] < 1:
+        return None
+    if not isinstance(spawn.get("parent_thread_id"), str):
+        return None
+    return spawn
+
+
 def is_initial_prompt(envelope_type: object, payload: dict[str, Any], source_kind: str) -> bool:
     """Recognize the first task prompt on currently observed rollout schemas."""
     payload_type = payload.get("type")
@@ -125,6 +177,7 @@ def inspect_thread(
 
     primary_meta_seen = False
     prompt_checked = False
+    standalone_fallback_marker_found: bool | None = None
     try:
         with candidates[0].open("r", encoding="utf-8-sig") as handle:
             for line in handle:
@@ -153,14 +206,15 @@ def inspect_thread(
                     add_unique(agent_types, payload.get("agent_type"))
 
                     source = payload.get("source")
-                    if isinstance(source, dict) and isinstance(source.get("subagent"), dict):
+                    spawn = known_subagent_spawn(source)
+                    if spawn is not None:
                         result["source_kind"] = "subagent"
                         result["source_is_subagent"] = True
-                        spawn = source["subagent"].get("thread_spawn")
-                        if isinstance(spawn, dict):
-                            add_unique(parents, spawn.get("parent_thread_id"))
-                            add_unique(agent_types, spawn.get("agent_role"))
-                    elif source is not None or payload.get("thread_source") is not None:
+                        add_unique(parents, spawn.get("parent_thread_id"))
+                        add_unique(agent_types, spawn.get("agent_role"))
+                    elif is_known_standalone_source(
+                        source, payload.get("thread_source")
+                    ):
                         result["source_kind"] = "standalone"
                         result["source_is_subagent"] = False
                     continue
@@ -183,15 +237,44 @@ def inspect_thread(
                         add_unique(sandbox_modes, sandbox.get("type"))
 
                 source_kind = str(result["source_kind"])
-                if dispatch_marker is not None and not prompt_checked and is_initial_prompt(
-                    envelope_type, payload, source_kind
+                if dispatch_marker is not None and source_kind == "standalone":
+                    payload_type = payload.get("type")
+                    marker_found = marker_in_payload(payload, dispatch_marker)
+                    if (
+                        not prompt_checked
+                        and envelope_type == "event_msg"
+                        and payload_type == "user_message"
+                    ):
+                        prompt_checked = True
+                        result["dispatch_marker_found"] = marker_found
+                    elif (
+                        standalone_fallback_marker_found is None
+                        and envelope_type == "response_item"
+                        and payload_type == "message"
+                        and payload.get("role") == "user"
+                    ):
+                        # Current Desktop rollouts can contain context-generated
+                        # user messages before the authoritative event_msg. Keep
+                        # the first response item only as a legacy fallback.
+                        standalone_fallback_marker_found = marker_found
+                elif (
+                    dispatch_marker is not None
+                    and not prompt_checked
+                    and is_initial_prompt(envelope_type, payload, source_kind)
                 ):
                     prompt_checked = True
-                    result["dispatch_marker_found"] = any(
-                        dispatch_marker in value for value in nested_strings(payload)
+                    result["dispatch_marker_found"] = marker_in_payload(
+                        payload, dispatch_marker
                     )
     except (OSError, UnicodeError):
         result["parse_error_count"] = int(result["parse_error_count"]) + 1
+
+    if (
+        dispatch_marker is not None
+        and not prompt_checked
+        and standalone_fallback_marker_found is not None
+    ):
+        result["dispatch_marker_found"] = standalone_fallback_marker_found
 
     return result
 
@@ -206,8 +289,19 @@ def record_is_valid(record: dict[str, object], marker_required: bool) -> bool:
         record["turn_context_count"] >= 1,
         len(record["models"]) == 1,
         len(record["reasoning_efforts"]) == 1,
+        len(record["sandbox_modes"]) == 1,
         record["parse_error_count"] == 0,
     ]
+    if record["source_kind"] == "subagent":
+        parents = record["parent_thread_ids"]
+        checks.append(
+            isinstance(parents, list)
+            and len(parents) == 1
+            and isinstance(parents[0], str)
+            and THREAD_ID_RE.fullmatch(parents[0]) is not None
+        )
+    elif record["source_kind"] == "standalone":
+        checks.append(record["parent_thread_ids"] == [])
     if marker_required:
         checks.append(record["dispatch_marker_found"] is True)
     return all(checks)
